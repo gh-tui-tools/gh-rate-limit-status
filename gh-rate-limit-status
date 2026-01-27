@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""
+gh-rate-limit-status — Show your GitHub API rate-limit status
+
+Usage:
+    gh rate-limit-status        # Show all rate limits
+    gh rate-limit-status -a     # Show all limits (including unused ones)
+    gh rate-limit-status --json # Output as JSON
+    gh rate-limit-status --watch # Continuously update display
+    gh rate-limit-status --warn 20 # Exit non-zero if any limit below 20%
+"""
+
+import subprocess
+import json
+import sys
+import time
+from datetime import datetime
+
+
+def get_rate_limits():
+    """Fetch rate limits from GitHub API."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", "rate_limit"],
+            capture_output=True, text=True, check=True
+        )
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"Error fetching rate limits: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print("Error parsing rate limit response", file=sys.stderr)
+        sys.exit(1)
+
+
+def format_reset_time(timestamp):
+    """Format reset timestamp as relative and absolute time."""
+    reset_dt = datetime.fromtimestamp(timestamp)
+    now = datetime.now()
+    delta = reset_dt - now
+
+    if delta.total_seconds() <= 0:
+        return "now"
+
+    minutes = int(delta.total_seconds() // 60)
+    seconds = int(delta.total_seconds() % 60)
+
+    if minutes > 0:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def get_bar(remaining, limit, width=20):
+    """Create a visual progress bar."""
+    if limit == 0:
+        return " " * width
+
+    pct = remaining / limit
+    filled = int(pct * width)
+    empty = width - filled
+
+    # Color based on percentage
+    if pct > 0.5:
+        color = "\033[32m"  # Green
+    elif pct > 0.2:
+        color = "\033[33m"  # Yellow
+    else:
+        color = "\033[31m"  # Red
+
+    reset = "\033[0m"
+    return f"{color}{'█' * filled}{'░' * empty}{reset}"
+
+
+# Resources hidden by default (enterprise/admin features most users don't need)
+HIDDEN_RESOURCES = {
+    "integration_manifest",       # GitHub App manifest creation
+    "actions_runner_registration",  # Self-hosted runner registration
+    "scim",                       # Enterprise SSO user provisioning
+    "audit_log",                  # Enterprise audit logs
+}
+
+
+def process_limits(data, show_all):
+    """Process rate limit data into a sorted list."""
+    resources = data.get("resources", {})
+
+    limits = []
+    for name, info in resources.items():
+        limit = info.get("limit", 0)
+        remaining = info.get("remaining", 0)
+        reset = info.get("reset", 0)
+
+        if show_all or (limit > 100 and name not in HIDDEN_RESOURCES):
+            limits.append({
+                "name": name,
+                "remaining": remaining,
+                "limit": limit,
+                "reset": reset,
+                "pct": (remaining / limit * 100) if limit > 0 else 0
+            })
+
+    # Sort by percentage remaining (lowest first)
+    limits.sort(key=lambda x: x["pct"])
+    return limits
+
+
+def print_table(limits):
+    """Print the rate limits as a formatted table."""
+    if not limits:
+        print("No rate limits to display.")
+        return
+
+    # Find max name width for alignment
+    name_width = max(len(item["name"]) for item in limits)
+
+    # Print table
+    print()
+    hdr_resource = f"{'Resource':^{name_width}}"
+    hdr_remaining = f"{'Remaining':^19}"
+    hdr_bar = f"{'Meter':^20}"
+    hdr_resets = f"{'Resets in':>10}"
+    print(f"  {hdr_resource}   {hdr_remaining}   {hdr_bar}   {hdr_resets}")
+    print(f"  {'-' * name_width}   {'-' * 19}   {'-' * 20}   {'-' * 10}")
+
+    for item in limits:
+        name = item["name"]
+        remaining = item["remaining"]
+        limit = item["limit"]
+        reset = item["reset"]
+        pct = item["pct"]
+
+        bar = get_bar(remaining, limit)
+        reset_str = format_reset_time(reset)
+
+        # Pad name first, then add color
+        name_padded = f"{name:<{name_width}}"
+        if pct < 20:
+            name_display = f"\033[31m{name_padded}\033[0m"
+        elif pct < 50:
+            name_display = f"\033[33m{name_padded}\033[0m"
+        else:
+            name_display = name_padded
+
+        pct_int = int(pct)
+        rem_str = f"{remaining}/{limit}  {pct_int:>3}%"
+        print(f"  {name_display}   {rem_str:>19}   {bar}   {reset_str:>10}")
+
+    print()
+
+
+def print_json(limits):
+    """Print the rate limits as JSON."""
+    output = []
+    for item in limits:
+        output.append({
+            "resource": item["name"],
+            "remaining": item["remaining"],
+            "limit": item["limit"],
+            "reset_timestamp": item["reset"],
+            "reset_in": format_reset_time(item["reset"]),
+            "percent_remaining": round(item["pct"], 1)
+        })
+    print(json.dumps(output, indent=2))
+
+
+def check_warn_threshold(limits, threshold):
+    """Check if any limit is below the warning threshold."""
+    for item in limits:
+        if item["pct"] < threshold:
+            return True
+    return False
+
+
+def parse_args():
+    """Parse command line arguments."""
+    args = {
+        "help": False,
+        "all": False,
+        "json": False,
+        "watch": False,
+        "warn": None
+    }
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg in ("-h", "--help"):
+            args["help"] = True
+        elif arg in ("-a", "--all"):
+            args["all"] = True
+        elif arg == "--json":
+            args["json"] = True
+        elif arg in ("-w", "--watch"):
+            args["watch"] = True
+        elif arg == "--warn":
+            if i + 1 < len(sys.argv):
+                try:
+                    args["warn"] = float(sys.argv[i + 1])
+                    i += 1
+                except ValueError:
+                    print("Error: --warn requires a number", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print("Error: --warn requires a threshold percentage",
+                      file=sys.stderr)
+                sys.exit(1)
+        i += 1
+
+    return args
+
+
+def main():
+    args = parse_args()
+
+    if args["help"]:
+        print("""Usage: gh rate-limit-status [options]
+
+Show your GitHub API rate-limit status in a user-friendly table.
+
+Options:
+  -a, --all       Show all rate limits (including low-volume ones)
+  -h, --help      Show this help message
+  --json          Output as JSON (for scripting)
+  -w, --watch     Continuously update the display (Ctrl+C to stop)
+  --warn <pct>    Exit with code 1 if any limit is below <pct>%""")
+        sys.exit(0)
+
+    if args["watch"]:
+        try:
+            while True:
+                # Clear screen
+                print("\033[2J\033[H", end="")
+                data = get_rate_limits()
+                limits = process_limits(data, args["all"])
+                if args["json"]:
+                    print_json(limits)
+                else:
+                    print_table(limits)
+                print("Press Ctrl+C to stop")
+                time.sleep(5)
+        except KeyboardInterrupt:
+            print("\n")
+            sys.exit(0)
+    else:
+        data = get_rate_limits()
+        limits = process_limits(data, args["all"])
+
+        if args["json"]:
+            print_json(limits)
+        else:
+            print_table(limits)
+
+        if args["warn"] is not None:
+            if check_warn_threshold(limits, args["warn"]):
+                sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

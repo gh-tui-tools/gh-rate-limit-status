@@ -8,6 +8,8 @@ A GitHub CLI extension that shows your GitHub API rate-limit status in a user-fr
 gh extension install gh-tui-tools/gh-rate-limit-status
 ```
 
+Precompiled binaries are published for Linux, macOS, and Windows (amd64 and arm64), so installation needs no runtime dependencies. Run `gh extension upgrade gh-rate-limit-status` to update.
+
 ## Usage
 
 ```sh
@@ -98,6 +100,6 @@ Differences from `gh-rate-limit`:
 | **JSON output** | Processed (sorted, filtered, with percentages) | None |
 | **Watch mode** | Yes (`-w`) | No |
 | **Warning threshold** | Yes (`--warn`) | No |
-| **Dependencies** | Python (no extras) | Shell + jq |
+| **Dependencies** | None — single binary | Shell + jq |
 
 Choose `gh-rate-limit-status` if you want visual progress bars, watch mode, or scripting features. Choose `gh-rate-limit` if you prefer absolute reset times or want a shell-only solution — or if you just want something simpler.

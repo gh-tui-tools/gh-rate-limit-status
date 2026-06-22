@@ -9,7 +9,7 @@ gh-rate-limit-status is a GitHub CLI extension that displays your GitHub API rat
 1. **At-a-glance status**: Show remaining API quota with visual indicators so you can quickly assess your situation
 2. **Highlight urgency**: Sort by percentage remaining and color-code so critical limits appear first and stand out
 3. **Relative time**: Show reset times as `15m 30s` rather than absolute timestamps — you care about "how long until reset" not "what time does it reset"
-4. **No dependencies**: Pure Python with no external packages beyond the standard library
+4. **Single binary**: a precompiled Go binary with no runtime dependencies
 5. **Sensible defaults**: Hide low-volume limits (code_search, dependency_snapshots, etc.) that you probably don’t care about
 
 ## Architecture
@@ -17,14 +17,14 @@ gh-rate-limit-status is a GitHub CLI extension that displays your GitHub API rat
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   CLI Parser    │────▶│  Data Fetching   │────▶│  Table Renderer │
-│  (sys.argv)     │     │  (gh api)        │     │  (stdout)       │
+│  (sys.argv)     │     │  (go-gh REST)    │     │  (stdout)       │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
 ### Data flow
 
 1. **Parse arguments**: Check for flags (`-h`, `-a`, `--json`, `-w`, `--warn`)
-2. **Fetch rate limits**: Call `gh api rate_limit` and parse JSON response
+2. **Fetch rate limits**: Call `GET /rate_limit` via the go-gh REST client and parse the JSON response
 3. **Filter limits**: By default, show only limits with > 100 quota (hides low-volume endpoints)
 4. **Sort by urgency**: Order by percentage remaining (lowest first)
 5. **Render output**: Print table (default) or JSON (`--json`)
@@ -105,6 +105,8 @@ Three urgency levels based on percentage remaining:
 
 Colors are applied to both the resource name and the progress bar.
 
+Color output is disabled automatically when stdout is not a terminal — for example when piping or redirecting — or when the [`NO_COLOR`](https://no-color.org/) environment variable is set. This detection comes from the GitHub CLI’s `term` package, so it follows the same conventions as `gh` itself.
+
 ### Sorting by urgency
 
 Limits are sorted by percentage remaining (ascending), so the most critical limits appear at the top of the table. This means you see problems first without scrolling.
@@ -136,16 +138,13 @@ name_width = max(len(item["name"]) for item in limits)
 
 ANSI color codes are applied *after* padding to avoid alignment issues — the padding is calculated on the plain text, then colors wrap the padded string.
 
-### No external dependencies
+### No runtime dependencies
 
-The tool uses only Python standard library modules:
-- `subprocess` — to call `gh api`
-- `json` — to parse the response
-- `sys` — for argv and exit
-- `datetime` — for time calculations
-- `time` — for watch mode sleep interval
+The tool is a single precompiled Go binary. At build time it depends only on `github.com/cli/go-gh/v2` (the official GitHub CLI library) for the REST client and terminal/color detection. At runtime it needs nothing installed beyond `gh` itself — not even a language runtime — which is what makes it work identically on Linux, macOS, and Windows.
 
-This ensures the extension works anywhere Python 3 is installed, with no `pip install` required.
+### Distribution
+
+The extension is distributed as a **precompiled** `gh` extension. A GitHub Actions workflow (`cli/gh-extension-precompile`) cross-compiles per-platform binaries on each `v*` tag and attaches them to the release as `gh-rate-limit-status-<os>-<arch>[.exe]`. `gh extension install` and `gh extension upgrade` then download the binary matching the user’s platform, including Windows — unlike an interpreted script extension, which has no reliable shebang mechanism on Windows.
 
 ### JSON output
 
@@ -216,6 +215,5 @@ GitHub enforces secondary rate limits separately from the primary limits shown h
 - **`-w SECONDS`** — Custom refresh interval for watch mode (currently hardcoded to 5 seconds)
 - **`--resource graphql,core`** — Filter output to specific resources
 - **`--compact`** — Single-line output suitable for shell prompts or quick checks
-- **`NO_COLOR` support** — Respect the [NO_COLOR](https://no-color.org/) environment variable for users who prefer uncolored output
 - **`--until <pct>`** — Block until a resource recovers above a threshold (useful before running rate-limit-heavy scripts)
 - **Depletion estimates** — If you're actively consuming quota, estimate when you'll hit zero based on recent usage patterns

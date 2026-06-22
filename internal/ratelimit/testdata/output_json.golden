@@ -1,0 +1,26 @@
+[
+  {
+    "resource": "graphql",
+    "remaining": 3517,
+    "limit": 5000,
+    "reset_timestamp": 1000950,
+    "reset_in": "15m 50s",
+    "percent_remaining": 70.3
+  },
+  {
+    "resource": "core",
+    "remaining": 4500,
+    "limit": 5000,
+    "reset_timestamp": 1000922,
+    "reset_in": "15m 22s",
+    "percent_remaining": 90.0
+  },
+  {
+    "resource": "copilot_usage_records",
+    "remaining": 5000,
+    "limit": 5000,
+    "reset_timestamp": 1003600,
+    "reset_in": "60m 00s",
+    "percent_remaining": 100.0
+  }
+]

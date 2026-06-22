@@ -1,0 +1,9 @@
+{
+  "resources": {
+    "core": {"limit": 5000, "remaining": 4500, "reset": 1000922},
+    "search": {"limit": 30, "remaining": 18, "reset": 1000030},
+    "copilot_usage_records": {"limit": 5000, "remaining": 5000, "reset": 1003600},
+    "graphql": {"limit": 5000, "remaining": 3517, "reset": 1000950},
+    "audit_log": {"limit": 5000, "remaining": 5000, "reset": 1000500}
+  }
+}

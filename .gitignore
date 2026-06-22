@@ -1,0 +1,7 @@
+# Built extension binary
+/gh-rate-limit-status
+/gh-rate-limit-status.exe
+
+# Editor backup/undo files
+*~
+*.un~
